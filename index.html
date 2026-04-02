@@ -650,7 +650,7 @@ const NOTES = [
   { name:'C5', freq:523.25, freqCnt:2987, hexCnt:'0x0BAB', color:'#00838f' },
 ];
 
-const SAMPLES = 512;
+const SAMPLES = 64;
 const DISPLAY_CYCLES = 2;
 const AMP_MAX = 511;
 const LANE_COLORS = ['#378add','#1d9e75','#d4537e','#ba7517'];
@@ -822,7 +822,7 @@ function updateUI() {
   });
 
   document.getElementById('infoNotes').textContent = count + ' / 4';
-  document.getElementById('infoI').textContent = sampleIdx + '/511';
+  document.getElementById('infoI').textContent = sampleIdx + '/63';
 
   let ampSum = 0;
   activeNotes.forEach(n => { ampSum += n.lut[sampleIdx]; });
