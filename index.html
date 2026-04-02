@@ -651,7 +651,7 @@ const NOTES = [
 ];
 
 const SAMPLES = 64;
-const DISPLAY_CYCLES = 2;
+const DISPLAY_CYCLES = 1 ;
 const AMP_MAX = 511;
 const LANE_COLORS = ['#378add','#1d9e75','#d4537e','#ba7517'];
 
@@ -743,7 +743,7 @@ function animate(ts) {
   if (lastTs === null) lastTs = ts;
   const dt = ts - lastTs; lastTs = ts;
   const speed = parseFloat(document.getElementById('speedRange').value);
-  phase += (dt / 1000) * speed * 3;
+  phase += (dt / 1000) * speed * 2;
   sampleIdx = Math.floor(phase * 8) % SAMPLES;
   updateUI();
   animId = requestAnimationFrame(animate);
