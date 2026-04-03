@@ -569,21 +569,33 @@
 
   <!-- Step Panel (shown when notes are pressed) -->
   <div class="steps-card" id="stepsCard">
-    <div class="sec-label">VHDL Signal Processing — Step-by-Step</div>
+    <div class="sec-label">VHDL Signal Processing — Step-by-Step (What happens inside the FPGA when you press a key)</div>
     <div class="steps-grid">
       <!-- Step 1 -->
       <div class="step-col">
-        <div class="step-col-title"><span class="step-num">1</span> Bit Encoding ("0000" &amp; bit)</div>
+        <div class="step-col-title"><span class="step-num">1</span> Bit Encoding</div>
+        <div style="font-family:var(--mono);font-size:9.5px;color:var(--muted);margin-bottom:10px;line-height:1.6">
+          Each switch maps to a 5-bit signal.<br>
+          <span style="color:var(--text2)">"0000" &amp; bit</span> → <span style="color:#0C447C">00001</span> if pressed, <span style="color:var(--muted)">00000</span> if not.
+        </div>
         <div id="step1Rows"></div>
       </div>
       <!-- Step 2 -->
       <div class="step-col">
         <div class="step-col-title"><span class="step-num">2</span> Cumulative Count (cnt)</div>
+        <div style="font-family:var(--mono);font-size:9.5px;color:var(--muted);margin-bottom:10px;line-height:1.6">
+          VHDL counts how many notes are active.<br>
+          <span style="color:var(--text2)">cnt</span> increments per pressed note → assigns a <span style="color:#085041">Wave Lane</span> index.
+        </div>
         <div id="step2Rows"></div>
       </div>
       <!-- Step 3 -->
       <div class="step-col">
         <div class="step-col-title"><span class="step-num">3</span> Route to Wave Lane</div>
+        <div style="font-family:var(--mono);font-size:9.5px;color:var(--muted);margin-bottom:10px;line-height:1.6">
+          Each active note gets its own wave generator.<br>
+          Wave0–Wave3 run in parallel → summed by <span style="color:var(--text2)">Amplitude Adder</span>.
+        </div>
         <div id="step3Rows"></div>
       </div>
     </div>
@@ -807,17 +819,21 @@ function buildSteps(activeNotes) {
     s1.appendChild(row);
   });
 
-  // Step 2: cumulative count
+  // Step 2: cumulative count — only show pressed notes, show prev→next increment
   let runSum = 0;
   NOTES.forEach((n, i) => {
     const bit = pressedArr[i];
-    runSum += bit;
+    if (!bit) return;
+    const prev = runSum;
+    runSum += 1;
     const row = document.createElement('div');
     row.className = 'step-row';
     row.innerHTML = `
       <span class="step-note-label" style="color:${n.color};font-weight:600">${n.name}</span>
+      <span class="bit-box cnt" style="opacity:0.4">${toBin5(prev)}</span>
+      <span class="step-arrow">+1 →</span>
       <span class="bit-box cnt">${toBin5(runSum)}</span>
-      <span class="step-muted">(${runSum})</span>`;
+      <span class="step-muted">(cnt=${runSum})</span>`;
     s2.appendChild(row);
   });
 
