@@ -618,6 +618,18 @@
     </div>
   </div>
 
+  <!-- Real-Time Sample Plot -->
+  <div class="wave-card full" id="samplePlotCard" style="margin-bottom:20px;">
+    <div class="wave-header">
+      <div class="wave-title-text">Real-Time Sample — Amplitude at i</div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span id="sampleIdxBadge" class="wave-badge" style="font-weight:700;">i = 0</span>
+        <span id="sampleAmpBadge" class="wave-badge">Σ = 0</span>
+      </div>
+    </div>
+    <canvas id="cvSample" height="140"></canvas>
+  </div>
+
   <!-- Formula -->
   <div class="formula-bar">
     <div class="formula-lbl">Freq_Cnt Formula</div>
@@ -718,7 +730,21 @@ function toggleNote(name) {
   updateUI();
 }
 
-function clearAll() { pressed.clear(); updateUI(); }
+function clearAll() {
+  pressed.clear();
+  // Stop animation
+  if (animPlaying) {
+    animPlaying = false;
+    cancelAnimationFrame(animId);
+    const btn = document.getElementById('btnAnimate');
+    btn.textContent = '▶ PLAY ANIMATION';
+    btn.classList.add('primary');
+  }
+  // Reset sample pointer
+  sampleIdx = 0;
+  phase = 0;
+  updateUI();
+}
 
 // ===== ANIMATION =====
 function toggleAnim() {
@@ -828,8 +854,12 @@ function updateUI() {
   activeNotes.forEach(n => { ampSum += n.lut[sampleIdx]; });
   document.getElementById('infoAmp').textContent = ampSum;
 
-  const pwmMax = AMP_MAX * 4;
-  const duty = Math.round(Math.max(0, ampSum + pwmMax / 2) / pwmMax * 100);
+  // PWM: sine is bipolar [-AMP_MAX*4, +AMP_MAX*4], map to [0%, 100%] with 50% at zero
+  // ping_length = ampSum + pwmMax/2  (2's complement → unsigned offset)
+  // pwmMax = AMP_MAX * 4 * 2 = full 10-bit range for 4-note polyphony
+  const pwmMax = AMP_MAX * 4 * 2; // = 4088
+  const pingLength = Math.max(0, Math.min(pwmMax, ampSum + pwmMax / 2));
+  const duty = Math.round(pingLength / pwmMax * 100);
   document.getElementById('infoDuty').textContent = duty + '%';
 
   document.getElementById('waveSumCard').classList.toggle('active', count > 0);
@@ -926,6 +956,104 @@ function drawPlayhead(ctx, lut, W, H, pl, pr, pt, pb, color) {
   ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fillStyle = color; ctx.fill();
   ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2);
   ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.3; ctx.stroke(); ctx.globalAlpha = 1;
+}
+
+// ===== REAL-TIME SAMPLE BAR CHART =====
+function drawSamplePlot(activeNotes) {
+  const { cv, ctx, W, H } = getCtx('cvSample');
+  ctx.clearRect(0, 0, W, H);
+
+  const pl = 48, pr = 16, pt = 14, pb = 28;
+  const plotW = W - pl - pr;
+  const plotH = H - pt - pb;
+  const midY  = pt + plotH / 2;
+
+  // Background
+  ctx.fillStyle = '#fafaf9';
+  ctx.fillRect(pl, pt, plotW, plotH);
+
+  // Grid lines
+  [-1, -0.5, 0, 0.5, 1].forEach(v => {
+    const y = midY - v * (plotH / 2 - 4);
+    ctx.strokeStyle = v === 0 ? 'rgba(0,0,0,0.18)' : 'rgba(0,0,0,0.06)';
+    ctx.lineWidth   = v === 0 ? 1 : 0.75;
+    ctx.beginPath(); ctx.moveTo(pl, y); ctx.lineTo(W - pr, y); ctx.stroke();
+  });
+  // Y-axis
+  ctx.strokeStyle = 'rgba(0,0,0,0.18)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(pl, pt); ctx.lineTo(pl, H - pb); ctx.stroke();
+
+  // Y labels
+  ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.font = '9px IBM Plex Mono, monospace'; ctx.textAlign = 'right';
+  [1, 0, -1].forEach(v => {
+    const y = midY - v * (plotH / 2 - 4);
+    ctx.fillText(v === 0 ? '0' : (v > 0 ? '+511' : '−511'), pl - 4, y + 3);
+  });
+
+  const barW = plotW / SAMPLES;
+
+  if (activeNotes.length === 0) {
+    // Draw ghost bars for all notes at 0
+    ctx.fillStyle = 'rgba(0,0,0,0.06)';
+    for (let i = 0; i < SAMPLES; i++) {
+      ctx.fillRect(pl + i * barW + 1, midY - 1, barW - 2, 2);
+    }
+    ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.font = '12px IBM Plex Mono, monospace'; ctx.textAlign = 'center';
+    ctx.fillText('Press a note — bars show amplitude at each sample i', W / 2, H / 2 + 4);
+  } else {
+    // Draw all 64 bars for each note (stacked transparently)
+    activeNotes.forEach(n => {
+      for (let i = 0; i < SAMPLES; i++) {
+        const v   = n.lut[i];
+        const barH = Math.abs(v / AMP_MAX) * (plotH / 2 - 4);
+        const y   = v >= 0 ? midY - barH : midY;
+        const isActive = i === sampleIdx;
+
+        ctx.globalAlpha = isActive ? 0.95 : 0.18;
+        ctx.fillStyle = n.color;
+        ctx.fillRect(pl + i * barW + 1, y, Math.max(barW - 2, 1), Math.max(barH, 1));
+      }
+    });
+    ctx.globalAlpha = 1;
+
+    // Highlight column at sampleIdx
+    const hx = pl + sampleIdx * barW;
+    ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 1; ctx.setLineDash([3,3]);
+    ctx.beginPath(); ctx.moveTo(hx + barW / 2, pt); ctx.lineTo(hx + barW / 2, H - pb); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Draw active dots + value labels per note at current i
+    activeNotes.forEach((n, ni) => {
+      const v = n.lut[sampleIdx];
+      const barH = Math.abs(v / AMP_MAX) * (plotH / 2 - 4);
+      const dotY = v >= 0 ? midY - barH - 6 : midY + barH + 6;
+      ctx.beginPath(); ctx.arc(hx + barW / 2, dotY, 4, 0, Math.PI * 2);
+      ctx.fillStyle = n.color; ctx.fill();
+
+      // Value label
+      ctx.fillStyle = n.color; ctx.font = 'bold 9.5px IBM Plex Mono, monospace';
+      ctx.textAlign = 'center';
+      const labelY = v >= 0 ? dotY - 5 : dotY + 13;
+      ctx.fillText(n.name + ':' + v, hx + barW / 2 + ni * 0 - 0, labelY - ni * 13);
+    });
+
+    // X-axis tick labels every 8 samples
+    ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.font = '8.5px IBM Plex Mono, monospace'; ctx.textAlign = 'center';
+    for (let i = 0; i < SAMPLES; i += 8) {
+      ctx.fillText(i, pl + (i + 0.5) * barW, H - pb + 12);
+    }
+    ctx.fillText('63', pl + 63.5 * barW, H - pb + 12);
+
+    // Current i label
+    ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.font = 'bold 9px IBM Plex Mono, monospace'; ctx.textAlign = 'center';
+    ctx.fillText('i=' + sampleIdx, hx + barW / 2, H - pb + 22);
+  }
+
+  // Update badges
+  let ampSum = 0;
+  activeNotes.forEach(n => { ampSum += n.lut[sampleIdx]; });
+  document.getElementById('sampleIdxBadge').textContent = 'i = ' + sampleIdx;
+  document.getElementById('sampleAmpBadge').textContent = 'Σ = ' + ampSum;
 }
 
 function drawAll(activeNotes) {
@@ -1032,6 +1160,9 @@ function drawAll(activeNotes) {
     }
   }
 
+  // Real-time sample bar chart
+  drawSamplePlot(activeNotes);
+
   // PWM
   {
     const { ctx, W, H } = getCtx('cvPWM');
@@ -1039,8 +1170,9 @@ function drawAll(activeNotes) {
     const activeN = NOTES.filter(n => pressed.has(n.name));
     let ampSum = 0;
     activeN.forEach(n => { ampSum += n.lut[sampleIdx]; });
-    const pwmMax = AMP_MAX * 4;
-    const duty = Math.max(0, Math.min(1, (ampSum + pwmMax / 2) / pwmMax));
+    const pwmMax = AMP_MAX * 4 * 2;
+    const pingLength = Math.max(0, Math.min(pwmMax, ampSum + pwmMax / 2));
+    const duty = pingLength / pwmMax;
     const segW = 56, numSegs = Math.floor(W / segW), yHi = 10, yLo = H - 10;
     ctx.strokeStyle = '#e67c00'; ctx.lineWidth = 2;
     let x = 0;
